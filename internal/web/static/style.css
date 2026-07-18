@@ -32,7 +32,7 @@ body {
 }
 
 .view { min-height: 100vh; }
-.view[hidden] { display: none; }
+.view[hidden] { display: none !important; }
 
 /* Login */
 #login-view {
