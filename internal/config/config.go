@@ -48,6 +48,15 @@ func SessionPath() (string, error) {
 	return filepath.Join(dir, "session.json"), nil
 }
 
+// IndexPath returns the path to the local SQLite file index.
+func IndexPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "index.db"), nil
+}
+
 // Load reads and parses the config file. Callers should check
 // os.IsNotExist(err) to distinguish "not set up yet" from a real error.
 func Load() (*Config, error) {

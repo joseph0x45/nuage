@@ -1,0 +1,233 @@
+// Package core is Nuage's shared engine: upload, download, list, and dedup
+// logic used by both the setup CLI and the web server. Neither entry point
+// should talk to gotd or the index directly — only through this package.
+package core
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/uploader"
+	"github.com/gotd/td/tg"
+
+	"github.com/joseph0x45/nuage/internal/config"
+	"github.com/joseph0x45/nuage/internal/index"
+	nuagetg "github.com/joseph0x45/nuage/internal/telegram"
+)
+
+// UploadThreads is the concurrency used for splitting large files into
+// MTProto parts during upload.
+const UploadThreads = 4
+
+// Engine ties together a live, authenticated Telegram connection, the
+// storage channel, and the local SQLite index. It owns the connection's
+// lifecycle: construct with New, and call Close when done.
+type Engine struct {
+	client   *telegram.Client
+	api      *tg.Client
+	idx      *index.Index
+	channel  *tg.InputPeerChannel
+	uploader *uploader.Uploader
+	sender   *message.Sender
+
+	cancel context.CancelFunc
+	done   chan error
+}
+
+// New connects to Telegram using cfg's credentials and persisted session,
+// and opens the local index. The returned Engine is ready to use
+// immediately; call Close to release both.
+func New(cfg *config.Config, idx *index.Index) (*Engine, error) {
+	if cfg.ChannelID == 0 {
+		return nil, fmt.Errorf("no storage channel configured; run `nuage init` first")
+	}
+
+	client, err := nuagetg.NewClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	ready := make(chan error, 1)
+	done := make(chan error, 1)
+
+	go func() {
+		done <- client.Run(runCtx, func(ctx context.Context) error {
+			status, err := client.Auth().Status(ctx)
+			if err != nil {
+				ready <- fmt.Errorf("check auth status: %w", err)
+				return nil
+			}
+			if !status.Authorized {
+				ready <- fmt.Errorf("not logged in; run `nuage auth` first")
+				return nil
+			}
+			ready <- nil
+			<-ctx.Done()
+			return nil
+		})
+	}()
+
+	if err := <-ready; err != nil {
+		cancel()
+		<-done
+		return nil, err
+	}
+
+	api := client.API()
+	up := uploader.NewUploader(api).WithThreads(UploadThreads)
+
+	return &Engine{
+		client: client,
+		api:    api,
+		idx:    idx,
+		channel: &tg.InputPeerChannel{
+			ChannelID:  cfg.ChannelID,
+			AccessHash: cfg.ChannelAccessHash,
+		},
+		uploader: up,
+		sender:   message.NewSender(api).WithUploader(up),
+		cancel:   cancel,
+		done:     done,
+	}, nil
+}
+
+// Close tears down the Telegram connection. It does not close the index —
+// callers own that separately since it may outlive a single Engine.
+func (e *Engine) Close() error {
+	e.cancel()
+	return <-e.done
+}
+
+// Upload hashes the file at path, checks the index for an existing upload
+// with the same content, and if none exists, sends it to the storage
+// channel as a plain document (never a compressed photo/video) and records
+// it in the index. If the file was already uploaded, the existing record is
+// returned as-is (no re-upload).
+func (e *Engine) Upload(ctx context.Context, path string) (*index.Record, error) {
+	hash, size, err := hashFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing, ok, err := e.idx.FindByHash(ctx, hash); err != nil {
+		return nil, err
+	} else if ok {
+		return existing, nil
+	}
+
+	inputFile, err := e.uploader.FromPath(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("upload %s to telegram: %w", path, err)
+	}
+
+	updates, err := e.sender.To(e.channel).File(ctx, inputFile)
+	if err != nil {
+		return nil, fmt.Errorf("send %s as document: %w", path, err)
+	}
+
+	msgID, err := messageID(updates)
+	if err != nil {
+		return nil, err
+	}
+
+	rec := &index.Record{
+		Path:       path,
+		Filename:   filepath.Base(path),
+		Hash:       hash,
+		Size:       size,
+		MessageID:  msgID,
+		ChannelID:  e.channel.ChannelID,
+		UploadedAt: time.Now().UTC(),
+	}
+	if err := e.idx.Insert(ctx, rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+// Download fetches the file recorded under id in the index and writes it to
+// destPath.
+func (e *Engine) Download(ctx context.Context, id int64, destPath string) (*index.Record, error) {
+	rec, err := e.idx.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := e.api.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
+		Channel: &tg.InputChannel{
+			ChannelID:  e.channel.ChannelID,
+			AccessHash: e.channel.AccessHash,
+		},
+		ID: []tg.InputMessageClass{&tg.InputMessageID{ID: rec.MessageID}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetch message %d: %w", rec.MessageID, err)
+	}
+
+	channelMsgs, ok := res.(*tg.MessagesChannelMessages)
+	if !ok || len(channelMsgs.Messages) == 0 {
+		return nil, fmt.Errorf("message %d not found in storage channel", rec.MessageID)
+	}
+	msg, ok := channelMsgs.Messages[0].(*tg.Message)
+	if !ok {
+		return nil, fmt.Errorf("message %d is not a regular message", rec.MessageID)
+	}
+	media, ok := msg.Media.(*tg.MessageMediaDocument)
+	if !ok {
+		return nil, fmt.Errorf("message %d has no document attached", rec.MessageID)
+	}
+	doc, ok := media.Document.(*tg.Document)
+	if !ok {
+		return nil, fmt.Errorf("message %d document is unavailable", rec.MessageID)
+	}
+
+	loc := doc.AsInputDocumentFileLocation("")
+	if _, err := e.client.Download(loc).ToPath(ctx, destPath); err != nil {
+		return nil, fmt.Errorf("download to %s: %w", destPath, err)
+	}
+	return rec, nil
+}
+
+// List returns every indexed file.
+func (e *Engine) List(ctx context.Context) ([]*index.Record, error) {
+	return e.idx.List(ctx)
+}
+
+// messageID extracts the id of the message just sent from the UpdatesClass
+// returned by a send call.
+func messageID(updates tg.UpdatesClass) (int, error) {
+	u, ok := updates.(*tg.Updates)
+	if !ok {
+		return 0, fmt.Errorf("unexpected response type %T from send", updates)
+	}
+	for _, upd := range u.Updates {
+		if nm, ok := upd.(*tg.UpdateNewChannelMessage); ok {
+			return nm.Message.GetID(), nil
+		}
+	}
+	return 0, fmt.Errorf("send response did not include a new message update")
+}
+
+func hashFile(path string) (hash string, size int64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, fmt.Errorf("hash %s: %w", path, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}

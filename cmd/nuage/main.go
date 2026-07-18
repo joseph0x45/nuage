@@ -18,6 +18,9 @@ func main() {
 
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newInitCmd())
+	root.AddCommand(newUploadCmd())
+	root.AddCommand(newGetCmd())
+	root.AddCommand(newListCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
