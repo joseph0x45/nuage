@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,6 +26,14 @@ func newServeCmd() *cobra.Command {
 			}
 			defer idx.Close()
 
+			if cfg.WebPasswordHash == "" || cfg.SessionSecret == "" {
+				return fmt.Errorf("no web UI password set; run `nuage password` first")
+			}
+			sessionSecret, err := base64.RawURLEncoding.DecodeString(cfg.SessionSecret)
+			if err != nil {
+				return fmt.Errorf("decode session secret: %w", err)
+			}
+
 			engine, err := core.New(cfg, idx)
 			if err != nil {
 				return err
@@ -33,7 +42,7 @@ func newServeCmd() *cobra.Command {
 
 			httpServer := &http.Server{
 				Addr:              addr,
-				Handler:           web.NewServer(engine),
+				Handler:           web.NewServer(engine, cfg.WebPasswordHash, sessionSecret),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 

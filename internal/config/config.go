@@ -13,11 +13,16 @@ import (
 // Telegram application (from my.telegram.org) and must be supplied by the
 // user before auth can run. ChannelID/ChannelAccessHash are populated by
 // `nuage init` once the storage channel has been created or selected.
+// WebPasswordHash/SessionSecret are populated by `nuage password` and gate
+// access to the web UI — required before `nuage serve` will start, since
+// it's reachable over the internet via Cloudflare Tunnel.
 type Config struct {
 	ApiID             int    `json:"api_id"`
 	ApiHash           string `json:"api_hash"`
 	ChannelID         int64  `json:"channel_id,omitempty"`
 	ChannelAccessHash int64  `json:"channel_access_hash,omitempty"`
+	WebPasswordHash   string `json:"web_password_hash,omitempty"`
+	SessionSecret     string `json:"session_secret,omitempty"`
 }
 
 // Dir returns the directory Nuage stores its config and session files in:

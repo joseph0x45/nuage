@@ -10,15 +10,29 @@ import (
 )
 
 // Server is the JSON API for Nuage: upload, list, and download files
-// through the shared core engine. It implements http.Handler.
+// through the shared core engine, gated by a shared-password login. It
+// implements http.Handler.
 type Server struct {
-	engine *core.Engine
-	mux    *http.ServeMux
+	engine        *core.Engine
+	mux           *http.ServeMux
+	passwordHash  string
+	sessionSecret []byte
+	loginLimiter  *loginLimiter
 }
 
-// NewServer builds a Server backed by engine.
-func NewServer(engine *core.Engine) *Server {
-	s := &Server{engine: engine, mux: http.NewServeMux()}
+// NewServer builds a Server backed by engine. passwordHash is the bcrypt
+// hash checked at login (from config.WebPasswordHash) and sessionSecret
+// signs session cookies (from config.SessionSecret) — both are required;
+// callers should refuse to start the server without them configured
+// (see `nuage password`).
+func NewServer(engine *core.Engine, passwordHash string, sessionSecret []byte) *Server {
+	s := &Server{
+		engine:        engine,
+		mux:           http.NewServeMux(),
+		passwordHash:  passwordHash,
+		sessionSecret: sessionSecret,
+		loginLimiter:  newLoginLimiter(),
+	}
 	s.routes()
 	return s
 }
@@ -28,7 +42,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("POST /api/files", s.handleUpload)
-	s.mux.HandleFunc("GET /api/files", s.handleList)
-	s.mux.HandleFunc("GET /api/files/{id}", s.handleDownload)
+	s.mux.HandleFunc("POST /api/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/logout", s.handleLogout)
+
+	s.mux.HandleFunc("POST /api/files", s.requireAuth(s.handleUpload))
+	s.mux.HandleFunc("GET /api/files", s.requireAuth(s.handleList))
+	s.mux.HandleFunc("GET /api/files/{id}", s.requireAuth(s.handleDownload))
 }
