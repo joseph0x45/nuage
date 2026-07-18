@@ -231,6 +231,29 @@ func (e *Engine) Record(ctx context.Context, id int64) (*index.Record, error) {
 	return e.idx.Get(ctx, id)
 }
 
+// Delete removes the file recorded under id: first the message in the
+// storage channel, then the index row. If the message was already gone
+// from Telegram (e.g. deleted manually), the index row is still removed.
+func (e *Engine) Delete(ctx context.Context, id int64) error {
+	rec, err := e.idx.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	_, err = e.api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
+		Channel: &tg.InputChannel{
+			ChannelID:  e.channel.ChannelID,
+			AccessHash: e.channel.AccessHash,
+		},
+		ID: []int{rec.MessageID},
+	})
+	if err != nil {
+		return fmt.Errorf("delete message %d: %w", rec.MessageID, err)
+	}
+
+	return e.idx.Delete(ctx, id)
+}
+
 // messageID extracts the id of the message just sent from the UpdatesClass
 // returned by a send call.
 func messageID(updates tg.UpdatesClass) (int, error) {

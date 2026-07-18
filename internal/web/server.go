@@ -48,6 +48,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/files", s.requireAuth(s.handleUpload))
 	s.mux.HandleFunc("GET /api/files", s.requireAuth(s.handleList))
 	s.mux.HandleFunc("GET /api/files/{id}", s.requireAuth(s.handleDownload))
+	s.mux.HandleFunc("DELETE /api/files/{id}", s.requireAuth(s.handleDelete))
 
 	// The HTML/JS/CSS shell is not itself sensitive — it's a static asset
 	// that renders a login form. The frontend JS decides what to show

@@ -11,6 +11,9 @@
   const fileListBody = document.getElementById("file-list");
   const emptyState = document.getElementById("empty-state");
 
+  const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+  const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>';
+
   function showLogin() {
     loginView.hidden = false;
     appView.hidden = true;
@@ -52,30 +55,67 @@
     fileListBody.innerHTML = "";
     emptyState.hidden = records.length > 0;
     for (const rec of records) {
-      const tr = document.createElement("tr");
-
-      const nameTd = document.createElement("td");
-      nameTd.textContent = rec.Filename;
-      tr.appendChild(nameTd);
-
-      const sizeTd = document.createElement("td");
-      sizeTd.textContent = formatSize(rec.Size);
-      tr.appendChild(sizeTd);
-
-      const dateTd = document.createElement("td");
-      dateTd.textContent = formatDate(rec.UploadedAt);
-      tr.appendChild(dateTd);
-
-      const actionTd = document.createElement("td");
-      const link = document.createElement("a");
-      link.href = "/api/files/" + rec.ID;
-      link.textContent = "Download";
-      link.className = "download-link";
-      actionTd.appendChild(link);
-      tr.appendChild(actionTd);
-
-      fileListBody.appendChild(tr);
+      fileListBody.appendChild(renderFileRow(rec));
     }
+  }
+
+  function renderFileRow(rec) {
+    const li = document.createElement("li");
+    li.className = "file-row";
+
+    const info = document.createElement("div");
+    info.className = "file-info";
+
+    const name = document.createElement("div");
+    name.className = "file-name";
+    name.textContent = rec.Filename;
+    info.appendChild(name);
+
+    const meta = document.createElement("div");
+    meta.className = "file-meta";
+    meta.textContent = formatSize(rec.Size) + " · " + formatDate(rec.UploadedAt);
+    info.appendChild(meta);
+
+    li.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.className = "file-actions";
+
+    const downloadLink = document.createElement("a");
+    downloadLink.href = "/api/files/" + rec.ID;
+    downloadLink.className = "icon-btn";
+    downloadLink.setAttribute("aria-label", "Download " + rec.Filename);
+    downloadLink.innerHTML = ICON_DOWNLOAD;
+    actions.appendChild(downloadLink);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "icon-btn danger";
+    deleteBtn.setAttribute("aria-label", "Delete " + rec.Filename);
+    deleteBtn.innerHTML = ICON_TRASH;
+    deleteBtn.addEventListener("click", () => deleteFile(rec, li));
+    actions.appendChild(deleteBtn);
+
+    li.appendChild(actions);
+    return li;
+  }
+
+  async function deleteFile(rec, rowEl) {
+    if (!confirm('Delete "' + rec.Filename + '"? This removes it from Telegram too.')) {
+      return;
+    }
+    const res = await fetch("/api/files/" + rec.ID, { method: "DELETE" });
+    if (res.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!res.ok && res.status !== 204) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error || "Failed to delete file");
+      return;
+    }
+    rowEl.remove();
+    emptyState.hidden = fileListBody.children.length > 0;
   }
 
   function uploadFile(file) {
@@ -189,4 +229,8 @@
   });
 
   loadFiles();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
 })();

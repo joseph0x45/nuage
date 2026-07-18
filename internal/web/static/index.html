@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Nuage</title>
+  <meta name="theme-color" content="#2f6f4f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Nuage">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -25,18 +33,13 @@
     </header>
 
     <div id="dropzone" class="dropzone">
-      <p>Drag &amp; drop files here, or click to choose</p>
+      <p>Drag &amp; drop files here, or tap to choose</p>
       <input type="file" id="file-input" multiple hidden>
     </div>
 
     <ul id="uploads" class="uploads"></ul>
 
-    <table class="file-table">
-      <thead>
-        <tr><th>Name</th><th>Size</th><th>Uploaded</th><th></th></tr>
-      </thead>
-      <tbody id="file-list"></tbody>
-    </table>
+    <ul id="file-list" class="file-list"></ul>
     <p id="empty-state" class="empty-state" hidden>No files yet — drop something above.</p>
   </main>
 

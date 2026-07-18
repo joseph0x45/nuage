@@ -95,6 +95,24 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid id %q", r.PathValue("id")))
+		return
+	}
+
+	if err := s.engine.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, index.ErrNotFound) {
+			writeError(w, http.StatusNotFound, fmt.Errorf("file %d not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

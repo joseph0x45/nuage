@@ -113,6 +113,23 @@ func (idx *Index) Get(ctx context.Context, id int64) (*Record, error) {
 	return rec, nil
 }
 
+// Delete removes the record for id. It does not touch Telegram — callers
+// are responsible for deleting the underlying message first.
+func (idx *Index) Delete(ctx context.Context, id int64) error {
+	res, err := idx.db.ExecContext(ctx, `DELETE FROM files WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete record %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check delete result for %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // List returns every indexed file, ordered by upload time (most recent
 // first).
 func (idx *Index) List(ctx context.Context) ([]*Record, error) {
