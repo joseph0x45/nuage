@@ -1,0 +1,12 @@
+[Unit]
+Description=Nuage (personal cloud storage)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/nuage serve --addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
