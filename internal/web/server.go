@@ -48,4 +48,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/files", s.requireAuth(s.handleUpload))
 	s.mux.HandleFunc("GET /api/files", s.requireAuth(s.handleList))
 	s.mux.HandleFunc("GET /api/files/{id}", s.requireAuth(s.handleDownload))
+
+	// The HTML/JS/CSS shell is not itself sensitive — it's a static asset
+	// that renders a login form. The frontend JS decides what to show
+	// based on whether the API calls it makes come back 401. Actual file
+	// data only ever flows through the /api/* routes above, which are
+	// gated.
+	s.mux.Handle("/", http.FileServerFS(staticFS()))
 }
