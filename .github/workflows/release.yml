@@ -30,6 +30,7 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath -ldflags="-s -w" -o dist/nuage-linux-${{ matrix.goarch }} ./cmd/nuage
+          cp deploy/nuage.service dist/
 
       - name: Checksum
         working-directory: dist
