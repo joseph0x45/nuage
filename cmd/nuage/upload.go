@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +30,7 @@ func newUploadCmd() *cobra.Command {
 			}
 			defer engine.Close()
 
-			rec, err := engine.Upload(context.Background(), args[0])
+			rec, err := engine.Upload(context.Background(), args[0], filepath.Base(args[0]))
 			if err != nil {
 				return err
 			}

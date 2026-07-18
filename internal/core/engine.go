@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gotd/td/telegram"
@@ -107,13 +106,15 @@ func (e *Engine) Close() error {
 	return <-e.done
 }
 
-// Upload hashes the file at path, checks the index for an existing upload
-// with the same content, and if none exists, sends it to the storage
+// Upload hashes the file at srcPath, checks the index for an existing
+// upload with the same content, and if none exists, sends it to the storage
 // channel as a plain document (never a compressed photo/video) and records
-// it in the index. If the file was already uploaded, the existing record is
-// returned as-is (no re-upload).
-func (e *Engine) Upload(ctx context.Context, path string) (*index.Record, error) {
-	hash, size, err := hashFile(path)
+// it under filename in the index. filename is separate from srcPath because
+// callers (e.g. the web server) may stage the upload under a temp path
+// distinct from the name the user gave it. If the file was already
+// uploaded, the existing record is returned as-is (no re-upload).
+func (e *Engine) Upload(ctx context.Context, srcPath, filename string) (*index.Record, error) {
+	hash, size, err := hashFile(srcPath)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +125,14 @@ func (e *Engine) Upload(ctx context.Context, path string) (*index.Record, error)
 		return existing, nil
 	}
 
-	inputFile, err := e.uploader.FromPath(ctx, path)
+	inputFile, err := e.uploader.FromPath(ctx, srcPath)
 	if err != nil {
-		return nil, fmt.Errorf("upload %s to telegram: %w", path, err)
+		return nil, fmt.Errorf("upload %s to telegram: %w", srcPath, err)
 	}
 
 	updates, err := e.sender.To(e.channel).File(ctx, inputFile)
 	if err != nil {
-		return nil, fmt.Errorf("send %s as document: %w", path, err)
+		return nil, fmt.Errorf("send %s as document: %w", srcPath, err)
 	}
 
 	msgID, err := messageID(updates)
@@ -140,8 +141,8 @@ func (e *Engine) Upload(ctx context.Context, path string) (*index.Record, error)
 	}
 
 	rec := &index.Record{
-		Path:       path,
-		Filename:   filepath.Base(path),
+		Path:       filename,
+		Filename:   filename,
 		Hash:       hash,
 		Size:       size,
 		MessageID:  msgID,
@@ -157,9 +158,34 @@ func (e *Engine) Upload(ctx context.Context, path string) (*index.Record, error)
 // Download fetches the file recorded under id in the index and writes it to
 // destPath.
 func (e *Engine) Download(ctx context.Context, id int64, destPath string) (*index.Record, error) {
-	rec, err := e.idx.Get(ctx, id)
+	rec, loc, err := e.locateDocument(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := e.client.Download(loc).ToPath(ctx, destPath); err != nil {
+		return nil, fmt.Errorf("download to %s: %w", destPath, err)
+	}
+	return rec, nil
+}
+
+// Stream fetches the file recorded under id and writes its bytes directly
+// to w, for the web server to pipe into an HTTP response without staging a
+// temp file on disk.
+func (e *Engine) Stream(ctx context.Context, id int64, w io.Writer) (*index.Record, error) {
+	rec, loc, err := e.locateDocument(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := e.client.Download(loc).Stream(ctx, w); err != nil {
+		return nil, fmt.Errorf("stream download: %w", err)
+	}
+	return rec, nil
+}
+
+func (e *Engine) locateDocument(ctx context.Context, id int64) (*index.Record, tg.InputFileLocationClass, error) {
+	rec, err := e.idx.Get(ctx, id)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	res, err := e.api.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
@@ -170,36 +196,39 @@ func (e *Engine) Download(ctx context.Context, id int64, destPath string) (*inde
 		ID: []tg.InputMessageClass{&tg.InputMessageID{ID: rec.MessageID}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("fetch message %d: %w", rec.MessageID, err)
+		return nil, nil, fmt.Errorf("fetch message %d: %w", rec.MessageID, err)
 	}
 
 	channelMsgs, ok := res.(*tg.MessagesChannelMessages)
 	if !ok || len(channelMsgs.Messages) == 0 {
-		return nil, fmt.Errorf("message %d not found in storage channel", rec.MessageID)
+		return nil, nil, fmt.Errorf("message %d not found in storage channel", rec.MessageID)
 	}
 	msg, ok := channelMsgs.Messages[0].(*tg.Message)
 	if !ok {
-		return nil, fmt.Errorf("message %d is not a regular message", rec.MessageID)
+		return nil, nil, fmt.Errorf("message %d is not a regular message", rec.MessageID)
 	}
 	media, ok := msg.Media.(*tg.MessageMediaDocument)
 	if !ok {
-		return nil, fmt.Errorf("message %d has no document attached", rec.MessageID)
+		return nil, nil, fmt.Errorf("message %d has no document attached", rec.MessageID)
 	}
 	doc, ok := media.Document.(*tg.Document)
 	if !ok {
-		return nil, fmt.Errorf("message %d document is unavailable", rec.MessageID)
+		return nil, nil, fmt.Errorf("message %d document is unavailable", rec.MessageID)
 	}
 
-	loc := doc.AsInputDocumentFileLocation("")
-	if _, err := e.client.Download(loc).ToPath(ctx, destPath); err != nil {
-		return nil, fmt.Errorf("download to %s: %w", destPath, err)
-	}
-	return rec, nil
+	return rec, doc.AsInputDocumentFileLocation(""), nil
 }
 
 // List returns every indexed file.
 func (e *Engine) List(ctx context.Context) ([]*index.Record, error) {
 	return e.idx.List(ctx)
+}
+
+// Record looks up a single indexed file's metadata by id, without touching
+// Telegram. Callers that need the file bytes should follow up with Stream
+// or Download.
+func (e *Engine) Record(ctx context.Context, id int64) (*index.Record, error) {
+	return e.idx.Get(ctx, id)
 }
 
 // messageID extracts the id of the message just sent from the UpdatesClass

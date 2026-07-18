@@ -30,6 +30,9 @@ type Index struct {
 	db *sql.DB
 }
 
+// ErrNotFound is returned (wrapped) by Get when id has no matching record.
+var ErrNotFound = sql.ErrNoRows
+
 const schema = `
 CREATE TABLE IF NOT EXISTS files (
 	id          INTEGER PRIMARY KEY AUTOINCREMENT,

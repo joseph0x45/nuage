@@ -21,6 +21,7 @@ func main() {
 	root.AddCommand(newUploadCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newListCmd())
+	root.AddCommand(newServeCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
