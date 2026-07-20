@@ -100,7 +100,8 @@ resolve `InputFileLocation` from the media → `downloader.Download()` to disk.
 | id           | primary key                              |
 | path         | virtual path / original relative path    |
 | filename     | original filename                        |
-| hash         | content hash, used for dedup             |
+| owner        | username of the profile that uploaded it (empty = pre-profiles legacy file) |
+| hash         | content hash, `UNIQUE(owner, hash)` — dedup is scoped per-owner, not global |
 | size         | bytes                                    |
 | message_id   | Telegram message id (durable pointer)    |
 | channel_id   | Telegram channel id                      |
@@ -139,16 +140,19 @@ but isn't the target UX.)
   progress indication for large video uploads. Needs to be simple enough for a
   non-technical user (primary user is not you).
 - **Auth for the web UI is required, not optional** — since this will be reachable
-  over the internet via Cloudflare Tunnel (not just LAN), a shared password is the
-  minimum bar, not a "nice to have." Worth considering Cloudflare Access (zero-trust
-  policy in front of the tunnel, e.g. email OTP) as a second layer, since it stops
-  unauthenticated requests before they even reach the Go server.
+  over the internet via Cloudflare Tunnel (not just LAN). Each household member logs
+  in as a named profile (`nuage user add <username>`, bcrypt-hashed password) rather
+  than a single shared password — each profile only sees/manages the files it
+  uploaded. Worth considering Cloudflare Access (zero-trust policy in front of the
+  tunnel, e.g. email OTP) as a second layer, since it stops unauthenticated requests
+  before they even reach the Go server.
 - Deployment target: home server, exposed to the internet via a Cloudflare Tunnel
   (no direct port-forwarding). `nuage serve` should bind to localhost/LAN and let
   `cloudflared` handle the public-facing side — the Go server itself never needs
   to listen on a public interface directly.
 - Rate limiting / brute-force protection on the login endpoint is worth having
-  once this is internet-reachable, even for a single-shared-password setup.
+  once this is internet-reachable, keyed per-IP regardless of which profile is
+  being logged into.
 
 ## Explicitly out of scope for v1
 
@@ -172,3 +176,9 @@ but isn't the target UX.)
   not LAN-only — auth on the web UI is mandatory, not optional. `nuage serve` binds
   locally; `cloudflared` handles public exposure, so the Go server never listens
   on a public interface directly.
+- **Named per-user profiles, not a single shared password**: each household member
+  (you, your mom) logs in as their own profile and only sees/manages their own
+  files. Dedup is scoped per-owner rather than global (`UNIQUE(owner, hash)`) —
+  two profiles uploading the same content each get their own Telegram message,
+  traded deliberately against a shared/ref-counted-delete design to avoid one
+  profile's delete ever being able to break another's file.

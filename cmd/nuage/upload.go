@@ -15,7 +15,7 @@ import (
 func newUploadCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "upload <path>",
-		Short: "Upload a file to the storage channel (scripting/debugging only; use the web UI day-to-day)",
+		Short: "Upload a file to the storage channel (scripting/debugging only, not tied to a profile; use the web UI day-to-day)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, idx, err := loadEngineDeps()
@@ -30,7 +30,7 @@ func newUploadCmd() *cobra.Command {
 			}
 			defer engine.Close()
 
-			rec, err := engine.Upload(context.Background(), args[0], filepath.Base(args[0]))
+			rec, err := engine.Upload(context.Background(), args[0], filepath.Base(args[0]), "")
 			if err != nil {
 				return err
 			}

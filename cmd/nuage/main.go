@@ -22,7 +22,7 @@ func main() {
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newListCmd())
 	root.AddCommand(newServeCmd())
-	root.AddCommand(newPasswordCmd())
+	root.AddCommand(newUserCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

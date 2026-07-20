@@ -2,6 +2,7 @@
   const loginView = document.getElementById("login-view");
   const appView = document.getElementById("app-view");
   const loginForm = document.getElementById("login-form");
+  const loginUsername = document.getElementById("login-username");
   const loginPassword = document.getElementById("login-password");
   const loginError = document.getElementById("login-error");
   const logoutBtn = document.getElementById("logout-btn");
@@ -287,7 +288,7 @@
     const res = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: loginPassword.value }),
+      body: JSON.stringify({ username: loginUsername.value, password: loginPassword.value }),
     });
     if (res.ok) {
       loginPassword.value = "";

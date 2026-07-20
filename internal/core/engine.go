@@ -107,19 +107,23 @@ func (e *Engine) Close() error {
 }
 
 // Upload hashes the file at srcPath, checks the index for an existing
-// upload with the same content, and if none exists, sends it to the storage
-// channel as a plain document (never a compressed photo/video) and records
-// it under filename in the index. filename is separate from srcPath because
-// callers (e.g. the web server) may stage the upload under a temp path
-// distinct from the name the user gave it. If the file was already
-// uploaded, the existing record is returned as-is (no re-upload).
-func (e *Engine) Upload(ctx context.Context, srcPath, filename string) (*index.Record, error) {
+// upload by owner with the same content, and if none exists, sends it to
+// the storage channel as a plain document (never a compressed photo/video)
+// and records it under filename in the index, owned by owner. filename is
+// separate from srcPath because callers (e.g. the web server) may stage the
+// upload under a temp path distinct from the name the user gave it. If
+// owner already uploaded this exact content, the existing record is
+// returned as-is (no re-upload) — dedup is scoped per-owner, so a different
+// owner uploading the same content still gets their own copy (see the
+// schema comment in internal/index). owner is "" for the unscoped CLI
+// commands.
+func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*index.Record, error) {
 	hash, size, err := hashFile(srcPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if existing, ok, err := e.idx.FindByHash(ctx, hash); err != nil {
+	if existing, ok, err := e.idx.FindByHash(ctx, hash, owner); err != nil {
 		return nil, err
 	} else if ok {
 		return existing, nil
@@ -143,6 +147,7 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename string) (*index.R
 	rec := &index.Record{
 		Path:       filename,
 		Filename:   filename,
+		Owner:      owner,
 		Hash:       hash,
 		Size:       size,
 		MessageID:  msgID,
@@ -156,9 +161,12 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename string) (*index.R
 }
 
 // Download fetches the file recorded under id in the index and writes it to
-// destPath.
-func (e *Engine) Download(ctx context.Context, id int64, destPath string) (*index.Record, error) {
-	rec, loc, err := e.locateDocument(ctx, id)
+// destPath. owner must match the record's owner, or be "" to bypass the
+// check (the unscoped CLI commands); otherwise index.ErrNotFound is
+// returned, matching the id-not-found case so callers can't distinguish
+// "doesn't exist" from "belongs to someone else".
+func (e *Engine) Download(ctx context.Context, id int64, destPath, owner string) (*index.Record, error) {
+	rec, loc, err := e.locateDocument(ctx, id, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +178,9 @@ func (e *Engine) Download(ctx context.Context, id int64, destPath string) (*inde
 
 // Stream fetches the file recorded under id and writes its bytes directly
 // to w, for the web server to pipe into an HTTP response without staging a
-// temp file on disk.
-func (e *Engine) Stream(ctx context.Context, id int64, w io.Writer) (*index.Record, error) {
-	rec, loc, err := e.locateDocument(ctx, id)
+// temp file on disk. See Download for owner's semantics.
+func (e *Engine) Stream(ctx context.Context, id int64, w io.Writer, owner string) (*index.Record, error) {
+	rec, loc, err := e.locateDocument(ctx, id, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -182,10 +190,13 @@ func (e *Engine) Stream(ctx context.Context, id int64, w io.Writer) (*index.Reco
 	return rec, nil
 }
 
-func (e *Engine) locateDocument(ctx context.Context, id int64) (*index.Record, tg.InputFileLocationClass, error) {
+func (e *Engine) locateDocument(ctx context.Context, id int64, owner string) (*index.Record, tg.InputFileLocationClass, error) {
 	rec, err := e.idx.Get(ctx, id)
 	if err != nil {
 		return nil, nil, err
+	}
+	if owner != "" && rec.Owner != owner {
+		return nil, nil, index.ErrNotFound
 	}
 
 	res, err := e.api.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
@@ -219,21 +230,38 @@ func (e *Engine) locateDocument(ctx context.Context, id int64) (*index.Record, t
 	return rec, doc.AsInputDocumentFileLocation(""), nil
 }
 
-// List returns every indexed file.
-func (e *Engine) List(ctx context.Context) ([]*index.Record, error) {
-	return e.idx.List(ctx)
+// List returns indexed files. An empty owner returns every file regardless
+// of who uploaded it (the unscoped CLI commands); the web server always
+// passes the logged-in profile's username.
+func (e *Engine) List(ctx context.Context, owner string) ([]*index.Record, error) {
+	return e.idx.List(ctx, owner)
 }
 
 // Record looks up a single indexed file's metadata by id, without touching
 // Telegram. Callers that need the file bytes should follow up with Stream
-// or Download.
-func (e *Engine) Record(ctx context.Context, id int64) (*index.Record, error) {
-	return e.idx.Get(ctx, id)
+// or Download. See Download for owner's semantics.
+func (e *Engine) Record(ctx context.Context, id int64, owner string) (*index.Record, error) {
+	rec, err := e.idx.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if owner != "" && rec.Owner != owner {
+		return nil, index.ErrNotFound
+	}
+	return rec, nil
 }
 
 // Rename updates the display name of the file recorded under id. It only
-// touches the index — the underlying Telegram message is untouched.
-func (e *Engine) Rename(ctx context.Context, id int64, filename string) (*index.Record, error) {
+// touches the index — the underlying Telegram message is untouched. See
+// Download for owner's semantics.
+func (e *Engine) Rename(ctx context.Context, id int64, filename, owner string) (*index.Record, error) {
+	rec, err := e.idx.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if owner != "" && rec.Owner != owner {
+		return nil, index.ErrNotFound
+	}
 	if err := e.idx.Rename(ctx, id, filename); err != nil {
 		return nil, err
 	}
@@ -243,10 +271,14 @@ func (e *Engine) Rename(ctx context.Context, id int64, filename string) (*index.
 // Delete removes the file recorded under id: first the message in the
 // storage channel, then the index row. If the message was already gone
 // from Telegram (e.g. deleted manually), the index row is still removed.
-func (e *Engine) Delete(ctx context.Context, id int64) error {
+// See Download for owner's semantics.
+func (e *Engine) Delete(ctx context.Context, id int64, owner string) error {
 	rec, err := e.idx.Get(ctx, id)
 	if err != nil {
 		return err
+	}
+	if owner != "" && rec.Owner != owner {
+		return index.ErrNotFound
 	}
 
 	_, err = e.api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{

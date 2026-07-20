@@ -53,7 +53,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rec, err := s.engine.Upload(r.Context(), tmpPath, header.Filename)
+	rec, err := s.engine.Upload(r.Context(), tmpPath, header.Filename, usernameFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -62,7 +62,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
-	records, err := s.engine.List(r.Context())
+	records, err := s.engine.List(r.Context(), usernameFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -89,7 +89,8 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, inline bool) 
 		return
 	}
 
-	rec, err := s.engine.Record(r.Context(), id)
+	owner := usernameFromContext(r.Context())
+	rec, err := s.engine.Record(r.Context(), id, owner)
 	if err != nil {
 		if errors.Is(err, index.ErrNotFound) {
 			writeError(w, http.StatusNotFound, fmt.Errorf("file %d not found", id))
@@ -111,7 +112,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, inline bool) 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(rec.Size, 10))
 
-	if _, err := s.engine.Stream(r.Context(), id, w); err != nil {
+	if _, err := s.engine.Stream(r.Context(), id, w, owner); err != nil {
 		// Headers/body may already be partially written at this point, so
 		// the response status can no longer be changed — just log it.
 		log.Printf("stream file %d failed: %v", id, err)
@@ -138,7 +139,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rec, err := s.engine.Rename(r.Context(), id, filename)
+	rec, err := s.engine.Rename(r.Context(), id, filename, usernameFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, index.ErrNotFound) {
 			writeError(w, http.StatusNotFound, fmt.Errorf("file %d not found", id))
@@ -157,7 +158,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.engine.Delete(r.Context(), id); err != nil {
+	if err := s.engine.Delete(r.Context(), id, usernameFromContext(r.Context())); err != nil {
 		if errors.Is(err, index.ErrNotFound) {
 			writeError(w, http.StatusNotFound, fmt.Errorf("file %d not found", id))
 			return

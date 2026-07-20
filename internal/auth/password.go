@@ -1,5 +1,6 @@
-// Package auth implements Nuage's web UI login: a single shared password
-// (there are no per-user accounts) and signed, stateless session cookies.
+// Package auth implements Nuage's web UI login: named user profiles
+// (bcrypt-hashed passwords) and signed, stateless session cookies that
+// encode which profile is logged in.
 package auth
 
 import (

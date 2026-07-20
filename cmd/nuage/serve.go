@@ -26,12 +26,16 @@ func newServeCmd() *cobra.Command {
 			}
 			defer idx.Close()
 
-			if cfg.WebPasswordHash == "" || cfg.SessionSecret == "" {
-				return fmt.Errorf("no web UI password set; run `nuage password` first")
+			if len(cfg.Users) == 0 || cfg.SessionSecret == "" {
+				return fmt.Errorf("no web UI users configured; run `nuage user add <username>` first")
 			}
 			sessionSecret, err := base64.RawURLEncoding.DecodeString(cfg.SessionSecret)
 			if err != nil {
 				return fmt.Errorf("decode session secret: %w", err)
+			}
+			users := make(map[string]string, len(cfg.Users))
+			for _, u := range cfg.Users {
+				users[u.Username] = u.PasswordHash
 			}
 
 			engine, err := core.New(cfg, idx)
@@ -42,7 +46,7 @@ func newServeCmd() *cobra.Command {
 
 			httpServer := &http.Server{
 				Addr:              addr,
-				Handler:           web.NewServer(engine, cfg.WebPasswordHash, sessionSecret),
+				Handler:           web.NewServer(engine, users, sessionSecret),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 

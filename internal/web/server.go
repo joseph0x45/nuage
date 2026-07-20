@@ -10,26 +10,27 @@ import (
 )
 
 // Server is the JSON API for Nuage: upload, list, and download files
-// through the shared core engine, gated by a shared-password login. It
-// implements http.Handler.
+// through the shared core engine, gated by per-user profile logins. Each
+// profile only sees and manages the files it uploaded. It implements
+// http.Handler.
 type Server struct {
 	engine        *core.Engine
 	mux           *http.ServeMux
-	passwordHash  string
+	users         map[string]string // username -> bcrypt hash
 	sessionSecret []byte
 	loginLimiter  *loginLimiter
 }
 
-// NewServer builds a Server backed by engine. passwordHash is the bcrypt
-// hash checked at login (from config.WebPasswordHash) and sessionSecret
-// signs session cookies (from config.SessionSecret) — both are required;
-// callers should refuse to start the server without them configured
-// (see `nuage password`).
-func NewServer(engine *core.Engine, passwordHash string, sessionSecret []byte) *Server {
+// NewServer builds a Server backed by engine. users maps each profile's
+// username to its bcrypt password hash (from config.Users) and
+// sessionSecret signs session cookies (from config.SessionSecret) — callers
+// should refuse to start the server unless at least one profile exists
+// (see `nuage user add`).
+func NewServer(engine *core.Engine, users map[string]string, sessionSecret []byte) *Server {
 	s := &Server{
 		engine:        engine,
 		mux:           http.NewServeMux(),
-		passwordHash:  passwordHash,
+		users:         users,
 		sessionSecret: sessionSecret,
 		loginLimiter:  newLoginLimiter(),
 	}

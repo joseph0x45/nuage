@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,6 +14,23 @@ import (
 )
 
 const sessionCookieName = "nuage_session"
+
+// unknownUserHash is a fixed bcrypt hash (of an arbitrary password no login
+// will ever send) checked when the submitted username doesn't exist, so a
+// bad-username response costs the same bcrypt comparison as a bad-password
+// one instead of returning near-instantly.
+const unknownUserHash = "$2a$10$arU1bQYYu.RdVLlkcknA3Oq4B1NwrIpSSy02biKiF5srhXT4awwfC"
+
+type contextKey int
+
+const usernameContextKey contextKey = iota
+
+// usernameFromContext returns the logged-in profile's username, as set by
+// requireAuth. Only meaningful inside handlers wrapped by requireAuth.
+func usernameFromContext(ctx context.Context) string {
+	username, _ := ctx.Value(usernameContextKey).(string)
+	return username
+}
 
 // maxLoginAttempts is how many failed logins a single IP gets within
 // loginLockoutWindow before being locked out — brute-force protection for
@@ -73,6 +91,7 @@ func (l *loginLimiter) prune(ip string) {
 }
 
 type loginRequest struct {
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -89,14 +108,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.CheckPassword(s.passwordHash, req.Password) {
+	hash, exists := s.users[req.Username]
+	// Run CheckPassword even when the username doesn't exist, against a
+	// fixed placeholder hash, so a nonexistent-username response takes
+	// roughly as long as a wrong-password one — a valid username shouldn't
+	// be distinguishable by response time.
+	if !exists {
+		hash = unknownUserHash
+	}
+	if !exists || !auth.CheckPassword(hash, req.Password) {
 		s.loginLimiter.recordFailure(ip)
-		writeError(w, http.StatusUnauthorized, fmt.Errorf("incorrect password"))
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("incorrect username or password"))
 		return
 	}
 	s.loginLimiter.recordSuccess(ip)
 
-	token := auth.NewSessionToken(s.sessionSecret)
+	token := auth.NewSessionToken(s.sessionSecret, req.Username)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
@@ -124,15 +151,22 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // requireAuth wraps a handler so it 401s unless the request carries a valid
-// session cookie.
+// session cookie, and makes the logged-in profile's username available to
+// next via usernameFromContext.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(sessionCookieName)
-		if err != nil || !auth.VerifySessionToken(s.sessionSecret, cookie.Value) {
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, fmt.Errorf("not logged in"))
 			return
 		}
-		next(w, r)
+		username, ok := auth.VerifySessionToken(s.sessionSecret, cookie.Value)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, fmt.Errorf("not logged in"))
+			return
+		}
+		ctx := context.WithValue(r.Context(), usernameContextKey, username)
+		next(w, r.WithContext(ctx))
 	}
 }
 

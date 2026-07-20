@@ -13,7 +13,7 @@ import (
 func newGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id> <dest-path>",
-		Short: "Download an indexed file by id (scripting/debugging only; use the web UI day-to-day)",
+		Short: "Download an indexed file by id (scripting/debugging only, not tied to a profile; use the web UI day-to-day)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -33,7 +33,7 @@ func newGetCmd() *cobra.Command {
 			}
 			defer engine.Close()
 
-			rec, err := engine.Download(context.Background(), id, args[1])
+			rec, err := engine.Download(context.Background(), id, args[1], "")
 			if err != nil {
 				return err
 			}

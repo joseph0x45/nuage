@@ -13,16 +13,56 @@ import (
 // Telegram application (from my.telegram.org) and must be supplied by the
 // user before auth can run. ChannelID/ChannelAccessHash are populated by
 // `nuage init` once the storage channel has been created or selected.
-// WebPasswordHash/SessionSecret are populated by `nuage password` and gate
-// access to the web UI — required before `nuage serve` will start, since
-// it's reachable over the internet via Cloudflare Tunnel.
+// Users/SessionSecret are populated by `nuage user add` and gate access to
+// the web UI — at least one profile is required before `nuage serve` will
+// start, since it's reachable over the internet via Cloudflare Tunnel.
 type Config struct {
-	ApiID             int    `json:"api_id"`
-	ApiHash           string `json:"api_hash"`
-	ChannelID         int64  `json:"channel_id,omitempty"`
-	ChannelAccessHash int64  `json:"channel_access_hash,omitempty"`
-	WebPasswordHash   string `json:"web_password_hash,omitempty"`
-	SessionSecret     string `json:"session_secret,omitempty"`
+	ApiID             int           `json:"api_id"`
+	ApiHash           string        `json:"api_hash"`
+	ChannelID         int64         `json:"channel_id,omitempty"`
+	ChannelAccessHash int64         `json:"channel_access_hash,omitempty"`
+	Users             []UserProfile `json:"users,omitempty"`
+	SessionSecret     string        `json:"session_secret,omitempty"`
+}
+
+// UserProfile is one named login for the web UI. Each profile only sees and
+// manages the files it uploaded — see internal/core's owner-scoped methods.
+type UserProfile struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+}
+
+// FindUser returns the profile named username, if any.
+func (c *Config) FindUser(username string) (*UserProfile, bool) {
+	for i := range c.Users {
+		if c.Users[i].Username == username {
+			return &c.Users[i], true
+		}
+	}
+	return nil, false
+}
+
+// UpsertUser creates or updates the profile named username with
+// passwordHash, reporting whether it was newly created.
+func (c *Config) UpsertUser(username, passwordHash string) (isNew bool) {
+	if existing, ok := c.FindUser(username); ok {
+		existing.PasswordHash = passwordHash
+		return false
+	}
+	c.Users = append(c.Users, UserProfile{Username: username, PasswordHash: passwordHash})
+	return true
+}
+
+// RemoveUser deletes the profile named username, reporting whether it
+// existed.
+func (c *Config) RemoveUser(username string) bool {
+	for i := range c.Users {
+		if c.Users[i].Username == username {
+			c.Users = append(c.Users[:i], c.Users[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // Dir returns the directory Nuage stores its config and session files in:
