@@ -10,6 +10,38 @@
   const uploadsList = document.getElementById("uploads");
   const fileListBody = document.getElementById("file-list");
   const emptyState = document.getElementById("empty-state");
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightbox-img");
+  const lightboxClose = document.getElementById("lightbox-close");
+
+  const IMAGE_EXTENSIONS = new Set([
+    "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
+  ]);
+
+  function isImage(filename) {
+    const dot = filename.lastIndexOf(".");
+    if (dot === -1) return false;
+    return IMAGE_EXTENSIONS.has(filename.slice(dot + 1).toLowerCase());
+  }
+
+  function openLightbox(rec) {
+    lightboxImg.src = "/api/files/" + rec.ID + "/view";
+    lightboxImg.alt = rec.Filename;
+    lightbox.hidden = false;
+  }
+
+  function closeLightbox() {
+    lightbox.hidden = true;
+    lightboxImg.src = "";
+  }
+
+  lightboxClose.addEventListener("click", closeLightbox);
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !lightbox.hidden) closeLightbox();
+  });
 
   const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
   const ICON_RENAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
@@ -63,6 +95,16 @@
   function renderFileRow(rec) {
     const li = document.createElement("li");
     li.className = "file-row";
+
+    if (isImage(rec.Filename)) {
+      const thumb = document.createElement("img");
+      thumb.className = "file-thumb";
+      thumb.src = "/api/files/" + rec.ID + "/view";
+      thumb.alt = "";
+      thumb.loading = "lazy";
+      thumb.addEventListener("click", () => openLightbox(rec));
+      li.appendChild(thumb);
+    }
 
     const info = document.createElement("div");
     info.className = "file-info";

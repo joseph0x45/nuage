@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -69,6 +71,18 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	s.serveFile(w, r, false)
+}
+
+// handleView serves a file inline (Content-Disposition: inline) with its
+// MIME type inferred from the filename extension, for the frontend to embed
+// directly — currently used for image thumbnails/lightbox. Non-image files
+// still work, they just won't render as anything special in the browser.
+func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
+	s.serveFile(w, r, true)
+}
+
+func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, inline bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid id %q", r.PathValue("id")))
@@ -85,14 +99,22 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", rec.Filename))
-	w.Header().Set("Content-Type", "application/octet-stream")
+	contentType := "application/octet-stream"
+	disposition := "attachment"
+	if inline {
+		disposition = "inline"
+		if ct := mime.TypeByExtension(filepath.Ext(rec.Filename)); ct != "" {
+			contentType = ct
+		}
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, rec.Filename))
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(rec.Size, 10))
 
 	if _, err := s.engine.Stream(r.Context(), id, w); err != nil {
 		// Headers/body may already be partially written at this point, so
 		// the response status can no longer be changed — just log it.
-		log.Printf("stream download of file %d failed: %v", id, err)
+		log.Printf("stream file %d failed: %v", id, err)
 	}
 }
 

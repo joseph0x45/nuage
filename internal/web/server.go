@@ -48,6 +48,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/files", s.requireAuth(s.handleUpload))
 	s.mux.HandleFunc("GET /api/files", s.requireAuth(s.handleList))
 	s.mux.HandleFunc("GET /api/files/{id}", s.requireAuth(s.handleDownload))
+	s.mux.HandleFunc("GET /api/files/{id}/view", s.requireAuth(s.handleView))
 	s.mux.HandleFunc("PATCH /api/files/{id}", s.requireAuth(s.handleRename))
 	s.mux.HandleFunc("DELETE /api/files/{id}", s.requireAuth(s.handleDelete))
 
