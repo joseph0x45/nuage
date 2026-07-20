@@ -86,7 +86,7 @@ func Open(path string) (*Index, error) {
 }
 
 // migrateOwnerColumn upgrades a pre-profiles database (hash globally UNIQUE,
-// no owner column) to the current schema. Existing rows get owner = '' —
+// no owner column) to the current schema. Existing rows get owner = ” —
 // BackfillOwner assigns them to a real profile once one exists.
 //
 // The old UNIQUE(hash) was declared inline on the column, so it can't be
@@ -165,7 +165,7 @@ func hasColumn(db *sql.DB, table, column string) (bool, error) {
 	return false, rows.Err()
 }
 
-// BackfillOwner assigns every unowned row (owner = '') to owner. Intended
+// BackfillOwner assigns every unowned row (owner = ”) to owner. Intended
 // to run once, when the first user profile is created, so files uploaded
 // before profiles existed become that profile's files.
 func (idx *Index) BackfillOwner(ctx context.Context, owner string) error {
@@ -259,6 +259,15 @@ func (idx *Index) Rename(ctx context.Context, id int64, filename string) error {
 	}
 	if n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// Reset deletes every row, for Reindex to rebuild from scratch by scanning
+// the storage channel — see Engine.Reindex.
+func (idx *Index) Reset(ctx context.Context) error {
+	if _, err := idx.db.ExecContext(ctx, `DELETE FROM files`); err != nil {
+		return fmt.Errorf("reset index: %w", err)
 	}
 	return nil
 }

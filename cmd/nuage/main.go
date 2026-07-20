@@ -23,6 +23,8 @@ func main() {
 	root.AddCommand(newListCmd())
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newUserCmd())
+	root.AddCommand(newReindexCmd())
+	root.AddCommand(newBackfillCaptionsCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

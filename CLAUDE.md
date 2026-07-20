@@ -107,9 +107,16 @@ resolve `InputFileLocation` from the media → `downloader.Download()` to disk.
 | channel_id   | Telegram channel id                      |
 | uploaded_at  | timestamp                                |
 
-Open question: whether to also mirror this index into Telegram itself (e.g. a
-pinned message or dedicated index channel) so it can be rebuilt from scratch on
-a new machine. Not yet decided.
+**Decided**: the index is mirrored into Telegram itself, via each upload's
+message caption (JSON: `path`, `filename`, `owner`, `hash` — everything else
+is recovered from the message: size from the document, message_id/upload
+date from the message itself). `nuage reindex` rebuilds `index.db` from
+scratch by walking the channel's message history and parsing captions —
+recovery if the local index is ever lost, without needing a second backup
+system. `nuage backfill-captions` is a one-time step to cover files uploaded
+before this existed (new uploads set their caption immediately). Chosen over
+periodic `index.db` backups specifically to avoid depending on a second
+piece of infrastructure outside Telegram.
 
 ### Chunking (edge case only)
 

@@ -212,6 +212,31 @@ func TestMigrateOwnerColumnFromLegacySchema(t *testing.T) {
 	defer idx2.Close()
 }
 
+func TestReset(t *testing.T) {
+	idx := openTest(t)
+	ctx := context.Background()
+	for _, r := range []*Record{
+		{Path: "a.txt", Filename: "a.txt", Owner: "joseph", Hash: "h1", Size: 1, MessageID: 1, ChannelID: 1, UploadedAt: time.Now().UTC()},
+		{Path: "b.txt", Filename: "b.txt", Owner: "mom", Hash: "h2", Size: 1, MessageID: 2, ChannelID: 1, UploadedAt: time.Now().UTC()},
+	} {
+		if err := idx.Insert(ctx, r); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	if err := idx.Reset(ctx); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+
+	records, err := idx.List(ctx, "")
+	if err != nil {
+		t.Fatalf("list after reset: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("List after Reset = %d records, want 0", len(records))
+	}
+}
+
 func TestBackfillOwner(t *testing.T) {
 	idx := openTest(t)
 	ctx := context.Background()

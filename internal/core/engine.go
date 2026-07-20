@@ -9,11 +9,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/message/styling"
+	"github.com/gotd/td/telegram/query"
+	"github.com/gotd/td/telegram/query/messages"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 
@@ -134,7 +138,16 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*
 		return nil, fmt.Errorf("upload %s to telegram: %w", srcPath, err)
 	}
 
-	updates, err := e.sender.To(e.channel).File(ctx, inputFile)
+	// The caption mirrors just enough metadata (path/filename/owner/hash)
+	// for Reindex to rebuild the local index from the channel alone if
+	// index.db is ever lost — everything else (size, message id, upload
+	// date) is recovered from the message itself.
+	caption, err := encodeFileMeta(&index.Record{Path: filename, Filename: filename, Owner: owner, Hash: hash})
+	if err != nil {
+		return nil, fmt.Errorf("encode file metadata: %w", err)
+	}
+
+	updates, err := e.sender.To(e.channel).File(ctx, inputFile, styling.Plain(caption))
 	if err != nil {
 		return nil, fmt.Errorf("send %s as document: %w", srcPath, err)
 	}
@@ -251,9 +264,11 @@ func (e *Engine) Record(ctx context.Context, id int64, owner string) (*index.Rec
 	return rec, nil
 }
 
-// Rename updates the display name of the file recorded under id. It only
-// touches the index — the underlying Telegram message is untouched. See
-// Download for owner's semantics.
+// Rename updates the display name of the file recorded under id, and
+// best-effort updates the Telegram message's caption to match so Reindex
+// stays accurate. The index update is authoritative — a caption-edit
+// failure is logged, not returned, since day-to-day serving only ever
+// reads from the index. See Download for owner's semantics.
 func (e *Engine) Rename(ctx context.Context, id int64, filename, owner string) (*index.Record, error) {
 	rec, err := e.idx.Get(ctx, id)
 	if err != nil {
@@ -265,7 +280,18 @@ func (e *Engine) Rename(ctx context.Context, id int64, filename, owner string) (
 	if err := e.idx.Rename(ctx, id, filename); err != nil {
 		return nil, err
 	}
-	return e.idx.Get(ctx, id)
+	rec, err = e.idx.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if caption, err := encodeFileMeta(rec); err != nil {
+		log.Printf("encode file metadata for renamed file %d: %v", id, err)
+	} else if _, err := e.sender.To(e.channel).Edit(rec.MessageID).Text(ctx, caption); err != nil {
+		log.Printf("update telegram caption for renamed file %d (message %d): %v", id, rec.MessageID, err)
+	}
+
+	return rec, nil
 }
 
 // Delete removes the file recorded under id: first the message in the
@@ -293,6 +319,85 @@ func (e *Engine) Delete(ctx context.Context, id int64, owner string) error {
 	}
 
 	return e.idx.Delete(ctx, id)
+}
+
+// Reindex wipes the local index and rebuilds it from scratch by walking
+// every message in the storage channel and parsing the metadata each
+// upload's caption carries (see fileMeta). Use this after losing index.db,
+// or when moving to a new machine. Messages without recognizable Nuage
+// metadata (e.g. anything posted before this feature existed, or manually)
+// are silently skipped — run BackfillCaptions first to cover older uploads.
+// Returns how many records were recovered.
+func (e *Engine) Reindex(ctx context.Context) (int, error) {
+	if err := e.idx.Reset(ctx); err != nil {
+		return 0, err
+	}
+
+	var count int
+	err := query.Messages(e.api).GetHistory(e.channel).BatchSize(100).
+		ForEach(ctx, func(ctx context.Context, elem messages.Elem) error {
+			msg, ok := elem.Msg.(*tg.Message)
+			if !ok {
+				return nil
+			}
+			media, ok := msg.Media.(*tg.MessageMediaDocument)
+			if !ok {
+				return nil
+			}
+			doc, ok := media.Document.(*tg.Document)
+			if !ok {
+				return nil
+			}
+			meta, ok := decodeFileMeta(msg.Message)
+			if !ok {
+				return nil
+			}
+
+			rec := &index.Record{
+				Path:       meta.Path,
+				Filename:   meta.Filename,
+				Owner:      meta.Owner,
+				Hash:       meta.Hash,
+				Size:       doc.Size,
+				MessageID:  msg.ID,
+				ChannelID:  e.channel.ChannelID,
+				UploadedAt: time.Unix(int64(msg.Date), 0).UTC(),
+			}
+			if err := e.idx.Insert(ctx, rec); err != nil {
+				return fmt.Errorf("insert reindexed record for message %d: %w", msg.ID, err)
+			}
+			count++
+			return nil
+		})
+	if err != nil {
+		return count, fmt.Errorf("walk channel history: %w", err)
+	}
+	return count, nil
+}
+
+// BackfillCaptions writes disaster-recovery metadata into the Telegram
+// caption of every currently-indexed file, for files uploaded before
+// captions were introduced (new uploads set theirs immediately in Upload).
+// Only needs to run once; safe to re-run since Edit overwrites in place.
+// Returns how many messages were updated before any error.
+func (e *Engine) BackfillCaptions(ctx context.Context) (int, error) {
+	records, err := e.idx.List(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+	for _, rec := range records {
+		caption, err := encodeFileMeta(rec)
+		if err != nil {
+			return count, fmt.Errorf("encode file metadata for file %d: %w", rec.ID, err)
+		}
+		if _, err := e.sender.To(e.channel).Edit(rec.MessageID).Text(ctx, caption); err != nil {
+			return count, fmt.Errorf("set caption for file %d (message %d): %w", rec.ID, rec.MessageID, err)
+		}
+		count++
+	}
+	return count, nil
 }
 
 // messageID extracts the id of the message just sent from the UpdatesClass
