@@ -130,6 +130,24 @@ func (idx *Index) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Rename updates the filename for id. It leaves Path untouched — Path and
+// Filename only track together at upload time; once folder support exists
+// Path may diverge.
+func (idx *Index) Rename(ctx context.Context, id int64, filename string) error {
+	res, err := idx.db.ExecContext(ctx, `UPDATE files SET filename = ? WHERE id = ?`, filename, id)
+	if err != nil {
+		return fmt.Errorf("rename record %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check rename result for %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // List returns every indexed file, ordered by upload time (most recent
 // first).
 func (idx *Index) List(ctx context.Context) ([]*Record, error) {

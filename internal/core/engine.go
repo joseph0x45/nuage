@@ -231,6 +231,15 @@ func (e *Engine) Record(ctx context.Context, id int64) (*index.Record, error) {
 	return e.idx.Get(ctx, id)
 }
 
+// Rename updates the display name of the file recorded under id. It only
+// touches the index — the underlying Telegram message is untouched.
+func (e *Engine) Rename(ctx context.Context, id int64, filename string) (*index.Record, error) {
+	if err := e.idx.Rename(ctx, id, filename); err != nil {
+		return nil, err
+	}
+	return e.idx.Get(ctx, id)
+}
+
 // Delete removes the file recorded under id: first the message in the
 // storage channel, then the index row. If the message was already gone
 // from Telegram (e.g. deleted manually), the index row is still removed.

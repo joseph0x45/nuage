@@ -12,6 +12,7 @@
   const emptyState = document.getElementById("empty-state");
 
   const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+  const ICON_RENAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
   const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>';
 
   function showLogin() {
@@ -88,6 +89,14 @@
     downloadLink.innerHTML = ICON_DOWNLOAD;
     actions.appendChild(downloadLink);
 
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "icon-btn";
+    renameBtn.setAttribute("aria-label", "Rename " + rec.Filename);
+    renameBtn.innerHTML = ICON_RENAME;
+    renameBtn.addEventListener("click", () => renameFile(rec, name));
+    actions.appendChild(renameBtn);
+
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "icon-btn danger";
@@ -98,6 +107,31 @@
 
     li.appendChild(actions);
     return li;
+  }
+
+  async function renameFile(rec, nameEl) {
+    const next = prompt("Rename file", rec.Filename);
+    if (next === null) return;
+    const filename = next.trim();
+    if (!filename || filename === rec.Filename) return;
+
+    const res = await fetch("/api/files/" + rec.ID, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename }),
+    });
+    if (res.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error || "Failed to rename file");
+      return;
+    }
+    const updated = await res.json();
+    rec.Filename = updated.Filename;
+    nameEl.textContent = updated.Filename;
   }
 
   async function deleteFile(rec, rowEl) {

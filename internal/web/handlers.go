@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joseph0x45/nuage/internal/index"
 )
@@ -93,6 +94,38 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		// the response status can no longer be changed — just log it.
 		log.Printf("stream download of file %d failed: %v", id, err)
 	}
+}
+
+func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid id %q", r.PathValue("id")))
+		return
+	}
+
+	var body struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("parse request body: %w", err))
+		return
+	}
+	filename := strings.TrimSpace(body.Filename)
+	if filename == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("filename must not be empty"))
+		return
+	}
+
+	rec, err := s.engine.Rename(r.Context(), id, filename)
+	if err != nil {
+		if errors.Is(err, index.ErrNotFound) {
+			writeError(w, http.StatusNotFound, fmt.Errorf("file %d not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
