@@ -14,7 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goarch: [amd64, arm64]
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -24,21 +30,21 @@ jobs:
 
       - name: Build
         env:
-          GOOS: linux
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/nuage-linux-${{ matrix.goarch }} ./cmd/nuage
-          cp deploy/nuage.service dist/
-
-      - name: Checksum
-        working-directory: dist
-        run: sha256sum nuage-linux-${{ matrix.goarch }} > nuage-linux-${{ matrix.goarch }}.sha256
+          ext=""
+          if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          bin="nuage-$GOOS-$GOARCH$ext"
+          go build -trimpath -ldflags="-s -w" -o "dist/$bin" ./cmd/nuage
+          (cd dist && sha256sum "$bin" > "$bin.sha256")
+          if [ "$GOOS" = "linux" ]; then cp deploy/nuage.service dist/; fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nuage-linux-${{ matrix.goarch }}
+          name: nuage-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
   release:
