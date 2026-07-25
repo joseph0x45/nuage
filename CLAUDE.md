@@ -1,8 +1,8 @@
 # Nuage
 
 Personal "free" cloud storage built on Telegram, using a private channel as the
-storage backend. Primary user: a non-technical family member with thousands of
-saved images (Pinterest-style) and occasional video files. No encryption needed —
+storage backend. Primary user: a non-technical person with thousands of saved
+images (Pinterest-style) and occasional video files. No encryption needed —
 nothing sensitive is stored here.
 
 ## Goals
@@ -158,7 +158,7 @@ but isn't the target UX.)
   non-technical user (primary user is not you).
 - **Auth for the web UI is required, not optional** — this may be reachable over
   the internet, not just LAN, and how it's exposed is up to whoever's running it.
-  Each household member logs in as a named profile (`nuage user add <username>`,
+  Each person logs in as a named profile (`nuage user add <username>`,
   bcrypt-hashed password) rather than a single shared password — each profile
   only sees/manages the files it uploaded.
 - Deployment topology is not prescribed — `nuage serve` binds `0.0.0.0` by default
@@ -192,9 +192,9 @@ but isn't the target UX.)
   accessible, not LAN-only — auth on the web UI is mandatory, not optional,
   precisely because how it's exposed (direct, reverse proxy, tunnel) isn't
   something the software enforces. `nuage serve` binds `0.0.0.0` by default.
-- **Named per-user profiles, not a single shared password**: each household member
-  (you, your mom) logs in as their own profile and only sees/manages their own
-  files. Dedup is scoped per-owner rather than global (`UNIQUE(owner, hash)`) —
+- **Named per-user profiles, not a single shared password**: each person logs
+  in as their own profile and only sees/manages their own files. Dedup is
+  scoped per-owner rather than global (`UNIQUE(owner, hash)`) —
   two profiles uploading the same content each get their own Telegram message,
   traded deliberately against a shared/ref-counted-delete design to avoid one
   profile's delete ever being able to break another's file.
