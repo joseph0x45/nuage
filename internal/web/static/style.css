@@ -178,10 +178,56 @@ button {
   transition: width 0.1s linear;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.crumb {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0.25rem 0.15rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.crumb:hover { color: var(--text); text-decoration: underline; }
+.crumb:last-child { color: var(--text); font-weight: 600; }
+
+.crumb-sep { color: var(--muted); font-size: 0.9rem; }
+
+.folder-row { cursor: pointer; }
+.folder-row:hover { background: var(--surface); }
+
+.folder-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+.folder-icon svg { width: 22px; height: 22px; }
+
 .file-list {
   list-style: none;
   padding: 0;
-  margin: 1.5rem 0 0;
+  margin: 0.5rem 0 0;
 }
 
 .file-row {

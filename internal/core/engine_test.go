@@ -35,6 +35,27 @@ func TestHashFileKnownContent(t *testing.T) {
 	}
 }
 
+func TestNormalizeVirtualPath(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"photo.png", "photo.png"},
+		{"vacation/2024/photo.png", "vacation/2024/photo.png"},
+		{"/vacation/photo.png", "vacation/photo.png"},
+		{"vacation//photo.png", "vacation/photo.png"},
+		{"vacation/../photo.png", "photo.png"},
+		{"../../etc/passwd", "etc/passwd"},
+		{"", ""},
+		{".", ""},
+		{"..", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeVirtualPath(c.in); got != c.want {
+			t.Errorf("normalizeVirtualPath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestMessageIDWrongUpdateType(t *testing.T) {
 	if _, err := messageID(&tg.UpdatesTooLong{}); err == nil {
 		t.Fatal("messageID on non-*tg.Updates: expected error, got nil")

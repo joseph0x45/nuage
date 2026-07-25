@@ -118,6 +118,16 @@ before this existed (new uploads set their caption immediately). Chosen over
 periodic `index.db` backups specifically to avoid depending on a second
 piece of infrastructure outside Telegram.
 
+**Decided**: folders are purely virtual — there is no folders table. `path`
+holds the full slash-separated virtual path (e.g. `vacation/2024/photo.png`);
+`filename` is just its base name. A folder's contents are computed at list
+time as records whose `path` starts with that folder's prefix, so an empty
+folder can't persist (nothing to derive it from) and creating one is really
+just navigating the web UI to a not-yet-used path client-side until a file
+lands there. This is a nice-to-have for the primary developer's own use, not
+something the non-technical primary user needs — files uploaded without a
+folder prefix behave exactly as before.
+
 ### Chunking (edge case only)
 
 Only needed for files above the hard per-account ceiling (4GB w/ Premium, 2GB

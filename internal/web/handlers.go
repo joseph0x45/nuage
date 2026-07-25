@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -53,7 +54,12 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rec, err := s.engine.Upload(r.Context(), tmpPath, header.Filename, usernameFromContext(r.Context()))
+	virtualPath := header.Filename
+	if folder := strings.TrimSpace(r.FormValue("path")); folder != "" {
+		virtualPath = path.Join(folder, header.Filename)
+	}
+
+	rec, err := s.engine.Upload(r.Context(), tmpPath, virtualPath, usernameFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

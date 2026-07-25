@@ -11,6 +11,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/gotd/td/telegram"
@@ -113,15 +115,23 @@ func (e *Engine) Close() error {
 // Upload hashes the file at srcPath, checks the index for an existing
 // upload by owner with the same content, and if none exists, sends it to
 // the storage channel as a plain document (never a compressed photo/video)
-// and records it under filename in the index, owned by owner. filename is
-// separate from srcPath because callers (e.g. the web server) may stage the
-// upload under a temp path distinct from the name the user gave it. If
-// owner already uploaded this exact content, the existing record is
-// returned as-is (no re-upload) — dedup is scoped per-owner, so a different
-// owner uploading the same content still gets their own copy (see the
-// schema comment in internal/index). owner is "" for the unscoped CLI
-// commands.
-func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*index.Record, error) {
+// and records it under virtualPath in the index, owned by owner. srcPath is
+// separate from virtualPath because callers (e.g. the web server) may stage
+// the upload under a temp path distinct from the name the user gave it.
+// virtualPath may include a folder prefix (e.g. "vacation/2024/photo.png")
+// — folders are purely virtual, derived from Path prefixes at listing time,
+// not stored anywhere of their own. If owner already uploaded this exact
+// content, the existing record is returned as-is (no re-upload) — dedup is
+// scoped per-owner, so a different owner uploading the same content still
+// gets their own copy (see the schema comment in internal/index). owner is
+// "" for the unscoped CLI commands.
+func (e *Engine) Upload(ctx context.Context, srcPath, virtualPath, owner string) (*index.Record, error) {
+	virtualPath = normalizeVirtualPath(virtualPath)
+	if virtualPath == "" {
+		return nil, fmt.Errorf("empty upload path")
+	}
+	filename := path.Base(virtualPath)
+
 	hash, size, err := hashFile(srcPath)
 	if err != nil {
 		return nil, err
@@ -142,7 +152,7 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*
 	// for Reindex to rebuild the local index from the channel alone if
 	// index.db is ever lost — everything else (size, message id, upload
 	// date) is recovered from the message itself.
-	caption, err := encodeFileMeta(&index.Record{Path: filename, Filename: filename, Owner: owner, Hash: hash})
+	caption, err := encodeFileMeta(&index.Record{Path: virtualPath, Filename: filename, Owner: owner, Hash: hash})
 	if err != nil {
 		return nil, fmt.Errorf("encode file metadata: %w", err)
 	}
@@ -158,7 +168,7 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*
 	}
 
 	rec := &index.Record{
-		Path:       filename,
+		Path:       virtualPath,
 		Filename:   filename,
 		Owner:      owner,
 		Hash:       hash,
@@ -171,6 +181,20 @@ func (e *Engine) Upload(ctx context.Context, srcPath, filename, owner string) (*
 		return nil, err
 	}
 	return rec, nil
+}
+
+// normalizeVirtualPath cleans a caller-supplied virtual path into a
+// consistent forward-slash form with no leading slash, resolving any ".."
+// or "." segments. Anchoring at "/" before cleaning means a stray ".." can
+// never escape above the root — it's just discarded, same as path.Clean
+// does for an OS root. Returns "" for a path that cleans down to nothing
+// (root itself, or all-".." input).
+func normalizeVirtualPath(p string) string {
+	p = strings.TrimPrefix(path.Clean("/"+p), "/")
+	if p == "." {
+		return ""
+	}
+	return p
 }
 
 // Download fetches the file recorded under id in the index and writes it to

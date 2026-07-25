@@ -14,6 +14,15 @@
   const lightbox = document.getElementById("lightbox");
   const lightboxImg = document.getElementById("lightbox-img");
   const lightboxClose = document.getElementById("lightbox-close");
+  const breadcrumb = document.getElementById("breadcrumb");
+  const newFolderBtn = document.getElementById("new-folder-btn");
+
+  // All files ever fetched, flat. Folders aren't stored anywhere of their
+  // own — they're derived on the fly from the directory portion of each
+  // record's Path, so an empty folder only exists client-side until a file
+  // actually gets uploaded into it.
+  let allRecords = [];
+  let currentFolder = "";
 
   const IMAGE_EXTENSIONS = new Set([
     "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
@@ -45,6 +54,7 @@
   });
 
   const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+  const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
   const ICON_RENAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
   const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>';
 
@@ -82,13 +92,96 @@
     loginView.hidden = true;
     appView.hidden = false;
     const records = await res.json();
-    renderFiles(records || []);
+    allRecords = records || [];
+    renderFiles();
   }
 
-  function renderFiles(records) {
+  // dirname of a virtual path, "vacation/2024/photo.png" -> "vacation/2024",
+  // "photo.png" -> "" (root).
+  function dirname(virtualPath) {
+    const idx = virtualPath.lastIndexOf("/");
+    return idx === -1 ? "" : virtualPath.slice(0, idx);
+  }
+
+  function navigateTo(folder) {
+    currentFolder = folder;
+    renderFiles();
+  }
+
+  function renderBreadcrumb() {
+    breadcrumb.innerHTML = "";
+
+    const home = document.createElement("button");
+    home.type = "button";
+    home.className = "crumb";
+    home.textContent = "Home";
+    home.addEventListener("click", () => navigateTo(""));
+    breadcrumb.appendChild(home);
+
+    if (!currentFolder) return;
+    let acc = "";
+    for (const seg of currentFolder.split("/")) {
+      acc = acc ? acc + "/" + seg : seg;
+      const target = acc;
+
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "/";
+      breadcrumb.appendChild(sep);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "crumb";
+      btn.textContent = seg;
+      btn.addEventListener("click", () => navigateTo(target));
+      breadcrumb.appendChild(btn);
+    }
+  }
+
+  function renderFolderRow(name) {
+    const li = document.createElement("li");
+    li.className = "file-row folder-row";
+
+    const icon = document.createElement("span");
+    icon.className = "folder-icon";
+    icon.innerHTML = ICON_FOLDER;
+    li.appendChild(icon);
+
+    const info = document.createElement("div");
+    info.className = "file-info";
+    const label = document.createElement("div");
+    label.className = "file-name";
+    label.textContent = name;
+    info.appendChild(label);
+    li.appendChild(info);
+
+    li.addEventListener("click", () => navigateTo(currentFolder ? currentFolder + "/" + name : name));
+    return li;
+  }
+
+  function renderFiles() {
+    renderBreadcrumb();
+
+    const prefix = currentFolder ? currentFolder + "/" : "";
+    const folderNames = new Set();
+    const filesHere = [];
+
+    for (const rec of allRecords) {
+      const dir = dirname(rec.Path || rec.Filename);
+      if (dir === currentFolder) {
+        filesHere.push(rec);
+      } else if (dir.startsWith(prefix)) {
+        folderNames.add(dir.slice(prefix.length).split("/")[0]);
+      }
+    }
+
     fileListBody.innerHTML = "";
-    emptyState.hidden = records.length > 0;
-    for (const rec of records) {
+    emptyState.hidden = filesHere.length > 0 || folderNames.size > 0;
+
+    for (const name of Array.from(folderNames).sort()) {
+      fileListBody.appendChild(renderFolderRow(name));
+    }
+    for (const rec of filesHere) {
       fileListBody.appendChild(renderFileRow(rec));
     }
   }
@@ -191,6 +284,7 @@
       alert(body.error || "Failed to delete file");
       return;
     }
+    allRecords = allRecords.filter((r) => r.ID !== rec.ID);
     rowEl.remove();
     emptyState.hidden = fileListBody.children.length > 0;
   }
@@ -242,6 +336,7 @@
 
       const form = new FormData();
       form.append("file", file);
+      if (currentFolder) form.append("path", currentFolder);
       xhr.send(form);
     });
   }
@@ -259,6 +354,14 @@
     }
     loadFiles();
   }
+
+  newFolderBtn.addEventListener("click", () => {
+    const name = prompt("New folder name");
+    if (!name) return;
+    const clean = name.trim().replace(/\/+/g, "-");
+    if (!clean) return;
+    navigateTo(currentFolder ? currentFolder + "/" + clean : clean);
+  });
 
   dropzone.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
