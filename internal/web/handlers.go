@@ -82,10 +82,41 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 // handleView serves a file inline (Content-Disposition: inline) with its
 // MIME type inferred from the filename extension, for the frontend to embed
-// directly — currently used for image thumbnails/lightbox. Non-image files
-// still work, they just won't render as anything special in the browser.
+// directly — currently used for image thumbnails/lightbox and video preview
+// playback. Other files still work, they just won't render as anything
+// special in the browser.
 func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
 	s.serveFile(w, r, true)
+}
+
+// videoContentTypes fills gaps in and corrects mime.TypeByExtension for
+// common video containers: Go's builtin MIME table only knows a handful of
+// extensions and gets .webm wrong (maps it to audio/webm), and Windows
+// builds have no system mime.types file to fall back on for the rest.
+var videoContentTypes = map[string]string{
+	".mp4":  "video/mp4",
+	".m4v":  "video/x-m4v",
+	".mov":  "video/quicktime",
+	".webm": "video/webm",
+	".mkv":  "video/x-matroska",
+	".avi":  "video/x-msvideo",
+	".ogv":  "video/ogg",
+}
+
+// contentTypeForFilename resolves the Content-Type to serve a file inline
+// with, based on its extension. videoContentTypes takes priority over
+// mime.TypeByExtension since the latter mislabels some containers (.webm as
+// audio) and doesn't know others (.mov, .mkv, .avi) at all on platforms
+// without a system mime.types file, like the Windows build.
+func contentTypeForFilename(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ct, ok := videoContentTypes[ext]; ok {
+		return ct
+	}
+	if ct := mime.TypeByExtension(ext); ct != "" {
+		return ct
+	}
+	return "application/octet-stream"
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, inline bool) {
@@ -110,9 +141,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, inline bool) 
 	disposition := "attachment"
 	if inline {
 		disposition = "inline"
-		if ct := mime.TypeByExtension(filepath.Ext(rec.Filename)); ct != "" {
-			contentType = ct
-		}
+		contentType = contentTypeForFilename(rec.Filename)
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, rec.Filename))
 	w.Header().Set("Content-Type", contentType)

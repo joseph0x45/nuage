@@ -13,6 +13,7 @@
   const emptyState = document.getElementById("empty-state");
   const lightbox = document.getElementById("lightbox");
   const lightboxImg = document.getElementById("lightbox-img");
+  const lightboxVideo = document.getElementById("lightbox-video");
   const lightboxClose = document.getElementById("lightbox-close");
   const breadcrumb = document.getElementById("breadcrumb");
   const newFolderBtn = document.getElementById("new-folder-btn");
@@ -27,22 +28,45 @@
   const IMAGE_EXTENSIONS = new Set([
     "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
   ]);
+  const VIDEO_EXTENSIONS = new Set([
+    "mp4", "m4v", "mov", "webm", "mkv", "avi", "ogv",
+  ]);
+
+  function extOf(filename) {
+    const dot = filename.lastIndexOf(".");
+    return dot === -1 ? "" : filename.slice(dot + 1).toLowerCase();
+  }
 
   function isImage(filename) {
-    const dot = filename.lastIndexOf(".");
-    if (dot === -1) return false;
-    return IMAGE_EXTENSIONS.has(filename.slice(dot + 1).toLowerCase());
+    return IMAGE_EXTENSIONS.has(extOf(filename));
+  }
+
+  function isVideo(filename) {
+    return VIDEO_EXTENSIONS.has(extOf(filename));
   }
 
   function openLightbox(rec) {
-    lightboxImg.src = "/api/files/" + rec.ID + "/view";
-    lightboxImg.alt = rec.Filename;
+    if (isVideo(rec.Filename)) {
+      lightboxImg.hidden = true;
+      lightboxImg.src = "";
+      lightboxVideo.hidden = false;
+      lightboxVideo.src = "/api/files/" + rec.ID + "/view";
+    } else {
+      lightboxVideo.hidden = true;
+      lightboxVideo.pause();
+      lightboxVideo.src = "";
+      lightboxImg.hidden = false;
+      lightboxImg.src = "/api/files/" + rec.ID + "/view";
+      lightboxImg.alt = rec.Filename;
+    }
     lightbox.hidden = false;
   }
 
   function closeLightbox() {
     lightbox.hidden = true;
     lightboxImg.src = "";
+    lightboxVideo.pause();
+    lightboxVideo.src = "";
   }
 
   lightboxClose.addEventListener("click", closeLightbox);
@@ -55,6 +79,7 @@
 
   const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
   const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+  const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7Z"/></svg>';
   const ICON_RENAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
   const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>';
 
@@ -196,6 +221,12 @@
       thumb.src = "/api/files/" + rec.ID + "/view";
       thumb.alt = "";
       thumb.loading = "lazy";
+      thumb.addEventListener("click", () => openLightbox(rec));
+      li.appendChild(thumb);
+    } else if (isVideo(rec.Filename)) {
+      const thumb = document.createElement("span");
+      thumb.className = "file-thumb video-thumb";
+      thumb.innerHTML = ICON_PLAY;
       thumb.addEventListener("click", () => openLightbox(rec));
       li.appendChild(thumb);
     }

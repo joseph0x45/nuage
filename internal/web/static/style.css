@@ -319,11 +319,20 @@ button {
 }
 .lightbox[hidden] { display: none !important; }
 
-.lightbox img {
+.lightbox img,
+.lightbox video {
   max-width: 100%;
   max-height: 100%;
   border-radius: 8px;
 }
+
+.video-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.video-thumb svg { width: 20px; height: 20px; }
 
 .lightbox-close {
   position: absolute;
