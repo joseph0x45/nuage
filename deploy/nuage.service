@@ -9,7 +9,7 @@ Wants=network-online.target
 # use the default ~/.config/nuage. Resolves to
 # ~/.config/nuage-prod/nuage/{config.json,session.json,index.db}.
 Environment=XDG_CONFIG_HOME=%h/.config/nuage-prod
-ExecStart=%h/.local/bin/nuage serve --addr 127.0.0.1:8080
+ExecStart=%h/.local/bin/nuage serve
 Restart=on-failure
 RestartSec=5
 

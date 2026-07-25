@@ -17,7 +17,7 @@ func newServeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the Nuage web server (bind locally; expose via Cloudflare Tunnel)",
+		Short: "Start the Nuage web server",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, idx, err := loadEngineDeps()
@@ -55,7 +55,7 @@ func newServeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "address to bind (localhost/LAN only — expose publicly via cloudflared)")
+	cmd.Flags().StringVar(&addr, "addr", "0.0.0.0:8080", "address to bind; web UI auth is what actually gates access, not the bind address")
 
 	return cmd
 }

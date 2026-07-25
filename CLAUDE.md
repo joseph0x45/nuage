@@ -156,17 +156,16 @@ but isn't the target UX.)
 - Frontend: browse files/folders, drag-and-drop or file-picker upload, download,
   progress indication for large video uploads. Needs to be simple enough for a
   non-technical user (primary user is not you).
-- **Auth for the web UI is required, not optional** — since this will be reachable
-  over the internet via Cloudflare Tunnel (not just LAN). Each household member logs
-  in as a named profile (`nuage user add <username>`, bcrypt-hashed password) rather
-  than a single shared password — each profile only sees/manages the files it
-  uploaded. Worth considering Cloudflare Access (zero-trust policy in front of the
-  tunnel, e.g. email OTP) as a second layer, since it stops unauthenticated requests
-  before they even reach the Go server.
-- Deployment target: home server, exposed to the internet via a Cloudflare Tunnel
-  (no direct port-forwarding). `nuage serve` should bind to localhost/LAN and let
-  `cloudflared` handle the public-facing side — the Go server itself never needs
-  to listen on a public interface directly.
+- **Auth for the web UI is required, not optional** — this may be reachable over
+  the internet, not just LAN, and how it's exposed is up to whoever's running it.
+  Each household member logs in as a named profile (`nuage user add <username>`,
+  bcrypt-hashed password) rather than a single shared password — each profile
+  only sees/manages the files it uploaded.
+- Deployment topology is not prescribed — `nuage serve` binds `0.0.0.0` by default
+  so it works out of the box whether it's port-forwarded directly, put behind a
+  reverse proxy, or tunneled (e.g. Cloudflare Tunnel, which is what the primary
+  deployment currently uses, but that's an operator choice, not a requirement).
+  Auth is the actual access control in every case, not the bind address.
 - Rate limiting / brute-force protection on the login endpoint is worth having
   once this is internet-reachable, keyed per-IP regardless of which profile is
   being logged into.
@@ -189,10 +188,10 @@ but isn't the target UX.)
 - **Document upload, not photo/video upload**: avoids Telegram's recompression.
 - **Web interface is primary, CLI is setup-only**: day-to-day use (upload, browse,
   download) happens through the web UI, not CLI subcommands.
-- **Deployment: home server, exposed via Cloudflare Tunnel**: internet-accessible,
-  not LAN-only — auth on the web UI is mandatory, not optional. `nuage serve` binds
-  locally; `cloudflared` handles public exposure, so the Go server never listens
-  on a public interface directly.
+- **Deployment topology is the operator's choice, not prescribed**: internet-
+  accessible, not LAN-only — auth on the web UI is mandatory, not optional,
+  precisely because how it's exposed (direct, reverse proxy, tunnel) isn't
+  something the software enforces. `nuage serve` binds `0.0.0.0` by default.
 - **Named per-user profiles, not a single shared password**: each household member
   (you, your mom) logs in as their own profile and only sees/manages their own
   files. Dedup is scoped per-owner rather than global (`UNIQUE(owner, hash)`) —

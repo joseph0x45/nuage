@@ -92,7 +92,7 @@ nuage init               # creates (or picks, with --existing) the private
 nuage user add <name>    # creates a web UI login profile; the first
                           # profile created also inherits any files already
                           # indexed before profiles existed
-nuage serve               # starts the web server (binds 127.0.0.1:8080 by
+nuage serve               # starts the web server (binds 0.0.0.0:8080 by
                           # default; use --addr to change it)
 ```
 
@@ -123,11 +123,11 @@ Run `nuage help` or `nuage <command> --help` for details on any of these.
 
 ## Deployment
 
-Nuage is meant to run on a machine you control (home server, spare
-machine, etc.) and be reached over the internet through a
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-rather than by exposing a port directly. `nuage serve` only ever binds to
-`127.0.0.1`/LAN — `cloudflared` handles the public-facing side.
+`nuage serve` binds `0.0.0.0:8080` by default (override with `--addr`), so
+it's exposable however you prefer — direct port-forward, a reverse proxy,
+a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
+whatever fits your setup. Per-profile login is the actual access control
+regardless of how it's reached, not the network topology.
 
 ### As a systemd user service
 
