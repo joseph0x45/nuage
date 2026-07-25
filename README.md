@@ -13,10 +13,10 @@ database server, no object storage bill.
 
 - **Web UI** for day-to-day use: drag-and-drop upload, download, rename,
   delete, inline image/video preview, virtual folders.
-- **Per-user login profiles** — each household member logs in as their own
-  profile and only sees/manages the files they uploaded. Dedup is scoped
-  per-profile, so two people uploading the same file each keep their own
-  copy (deleting one never affects the other's).
+- **Per-user login profiles** — each person logs in as their own profile and
+  only sees/manages the files they uploaded. Dedup is scoped per-profile, so
+  two people uploading the same file each keep their own copy (deleting one
+  never affects the other's).
 - **Content-hash dedup** — re-uploading the same file (by content, not name)
   is a no-op.
 - **Bit-for-bit storage** — files are always sent as Telegram documents,
@@ -151,24 +151,6 @@ Two things matter for this to actually work:
    `nuage user add`, see above) — `nuage serve` refuses to start with no
    storage channel or no profiles configured, so the service will just
    crash-loop until that's done.
-
-### Running dev/test builds alongside a real deployment on the same machine
-
-If you're also developing Nuage on the same machine that's running the
-real deployment, keep them from colliding over the same config/session/
-index files (and the same port) by giving the real deployment its own
-`XDG_CONFIG_HOME`. `deploy/nuage.service` already does this:
-
-```
-Environment=XDG_CONFIG_HOME=%h/.config/nuage-prod
-```
-
-which resolves to `~/.config/nuage-prod/nuage/{config.json,session.json,
-index.db}` — entirely separate from the `~/.config/nuage` an ad-hoc
-`go run ./cmd/nuage ...` uses. Run the first-time setup commands above
-with `XDG_CONFIG_HOME=~/.config/nuage-prod` exported first so they land in
-the right place, and use a separate storage channel for the real
-deployment so test uploads never end up mixed in with real files.
 
 ## Disaster recovery
 
