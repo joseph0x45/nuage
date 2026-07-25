@@ -4,6 +4,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Isolates this instance's config/session/index from ad-hoc `nuage` runs on
+# the same machine (e.g. `go run ./cmd/nuage ...` while developing) — those
+# use the default ~/.config/nuage. Resolves to
+# ~/.config/nuage-prod/nuage/{config.json,session.json,index.db}.
+Environment=XDG_CONFIG_HOME=%h/.config/nuage-prod
 ExecStart=%h/.local/bin/nuage serve --addr 127.0.0.1:8080
 Restart=on-failure
 RestartSec=5
